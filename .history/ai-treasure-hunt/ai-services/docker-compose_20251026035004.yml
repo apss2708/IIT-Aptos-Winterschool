@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  # AI Services
+  clue-generator:
+    build: ./clue-generator
+    ports:
+      - "8001:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CLUE_SECRET_KEY=${CLUE_SECRET_KEY}
+    depends_on:
+      - redis
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  npc-guardian:
+    build: ./npc-guardian
+    ports:
+      - "8002:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  anti-cheat:
+    build: ./anti-cheat
+    ports:
+      - "8003:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MODEL_PATH=/app/models
+    depends_on:
+      - redis
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  world-builder:
+    build: ./world-builder
+    ports:
+      - "8004:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - WEATHER_API_KEY=${WEATHER_API_KEY}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Infrastructure
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # AI Gateway
+  ai-gateway:
+    build: 
+      context: .
+      dockerfile: ai-gateway/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - CLUE_SERVICE_URL=http://clue-generator:8000
+      - NPC_SERVICE_URL=http://npc-guardian:8000
+      - ANTICHEAT_SERVICE_URL=http://anti-cheat:8000
+      - WORLD_SERVICE_URL=http://world-builder:8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      clue-generator:
+        condition: service_healthy
+      npc-guardian:
+        condition: service_healthy
+      anti-cheat:
+        condition: service_healthy
+      world-builder:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis_data:
+
+networks:
+  ai-network:
+    driver: bridge
